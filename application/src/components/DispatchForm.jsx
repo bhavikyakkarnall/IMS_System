@@ -16,7 +16,6 @@ function DispatchForm() {
   const initialRows = Array.from({ length: 5 }, () => ({ cs: '', serial: '', qty: '', phone: '' }));
   const [itemRows, setItemRows] = useState(initialRows);
 
-  // Fetch tech users (or filter by role if needed)
   useEffect(() => {
     axios.get('/api/users/list')
       .then(res => setUsers(res.data.users || []))
@@ -33,7 +32,7 @@ function DispatchForm() {
     const updatedRows = [...itemRows];
     updatedRows[index][field] = value;
     setItemRows(updatedRows);
-    // For cs or serial, attempt auto-population of the row
+    // For cs or serial, attempt auto-population.
     if (field === 'cs' || field === 'serial') {
       axios.get('/api/inventory/search', { params: { barcode: value } })
         .then(res => {
@@ -41,7 +40,7 @@ function DispatchForm() {
             updatedRows[index] = {
               cs: res.data.item.cs,
               serial: res.data.item.serial,
-              qty: updatedRows[index].qty, // keep any existing qty
+              qty: updatedRows[index].qty,
               phone: res.data.item.phone
             };
             setItemRows([...updatedRows]);
@@ -72,7 +71,7 @@ function DispatchForm() {
 
   const handleDispatchSubmit = async () => {
     const dispatchData = {
-      techId: selectedTech.id, // send the tech id to the back end
+      techId: selectedTech.id, // send tech id to back end
       form_number: formData.form_number,
       tracking_number: formData.tracking_number,
       date: formData.date,
@@ -81,12 +80,10 @@ function DispatchForm() {
     };
 
     try {
-      // First, call the back end to update each inventory item.
-      // The back end should update the item's location to the selected tech's name
-      // and set the status to "Dispatched".
+      // Call the back-end dispatch endpoint. The endpoint should update each item's location and status.
       const res = await axios.post('/api/dispatch', dispatchData);
       if (res.data.success) {
-        // If back-end update is successful, generate the PDF.
+        // Generate PDF if dispatch update is successful.
         const doc = new jsPDF();
         let margin = 15;
         let verticalOffset = margin;
@@ -167,7 +164,7 @@ function DispatchForm() {
           type="text" 
           className="form-control" 
           value={formData.form_number}
-          onChange={e => setFormData({ ...formData, form_number: e.target.value })} 
+          onChange={e => setFormData({ ...formData, form_number: e.target.value })}
         />
       </div>
       <div className="mb-3">
@@ -176,7 +173,7 @@ function DispatchForm() {
           type="text" 
           className="form-control" 
           value={formData.tracking_number}
-          onChange={e => setFormData({ ...formData, tracking_number: e.target.value })} 
+          onChange={e => setFormData({ ...formData, tracking_number: e.target.value })}
         />
       </div>
       <div className="mb-3">
@@ -208,7 +205,7 @@ function DispatchForm() {
                   type="text" 
                   className="form-control" 
                   value={row.cs}
-                  onChange={e => handleRowChange(index, 'cs', e.target.value)} 
+                  onChange={e => handleRowChange(index, 'cs', e.target.value)}
                 />
               </td>
               <td>
@@ -216,7 +213,7 @@ function DispatchForm() {
                   type="text" 
                   className="form-control" 
                   value={row.serial}
-                  onChange={e => handleRowChange(index, 'serial', e.target.value)} 
+                  onChange={e => handleRowChange(index, 'serial', e.target.value)}
                 />
               </td>
               <td>
@@ -224,7 +221,7 @@ function DispatchForm() {
                   type="number" 
                   className="form-control" 
                   value={row.qty}
-                  onChange={e => handleRowChange(index, 'qty', e.target.value)} 
+                  onChange={e => handleRowChange(index, 'qty', e.target.value)}
                 />
               </td>
               <td>
@@ -232,7 +229,7 @@ function DispatchForm() {
                   type="text" 
                   className="form-control" 
                   value={row.phone}
-                  onChange={e => handleRowChange(index, 'phone', e.target.value)} 
+                  onChange={e => handleRowChange(index, 'phone', e.target.value)}
                 />
               </td>
             </tr>

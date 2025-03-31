@@ -16,14 +16,14 @@ function App() {
   const [userLocation, setUserLocation] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Check session on load
+  // Check session on app load.
   useEffect(() => {
     axios.get('/api/home')
       .then(res => {
         if (res.data.success && res.data.user) {
           setLoggedIn(true);
           setUserRole(res.data.user.role);
-          // Assume user's assigned location is stored in "location"
+          // For inventory filtering, assume user's location is stored in "location"
           setUserLocation(res.data.user.location);
         }
       })

@@ -147,12 +147,11 @@ app.get('/api/inventory/search', async (req, res) => {
   }
 });
 
-// Comments endpoints for an inventory item.
+// Comments endpoints.
 app.get('/api/inventory/:id/comments', async (req, res) => {
   const itemId = req.params.id;
   try {
     const [comments] = await pool.query('SELECT * FROM comments WHERE item_id = ?', [itemId]);
-    // Optionally: filter comments if not admin (handled here or in the front end).
     res.json({ success: true, comments });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -174,7 +173,8 @@ app.post('/api/inventory/:id/comments', async (req, res) => {
 
 // ---------------- Dispatch Endpoint ----------------
 
-// Dispatch endpoint: updates inventory items with selected tech's name.
+// Endpoint to process dispatch form submissions.
+// For each item, update the inventory by setting location to the tech's name and status to "Dispatched".
 app.post('/api/dispatch', async (req, res) => {
   const { techId, items } = req.body;
   try {
@@ -182,21 +182,102 @@ app.post('/api/dispatch', async (req, res) => {
     if (techRows.length === 0)
       return res.status(404).json({ success: false, message: 'Tech not found' });
     const techName = `${techRows[0].first_name} ${techRows[0].last_name}`;
+    
     for (const item of items) {
-      await pool.query('UPDATE inventory SET location = ? WHERE cs = ?', [techName, item.cs]);
+      await pool.query(
+        'UPDATE inventory SET location = ?, status = ? WHERE cs = ?',
+        [techName, 'Dispatched', item.cs]
+      );
     }
-    res.json({ success: true, message: 'Dispatch processed and items updated.' });
+    res.json({ success: true, message: 'Dispatch processed; items updated as Dispatched.' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// ---------------- Users Endpoints ----------------
+// ---------------- Admin & User Management Endpoints ----------------
+// Middleware to check for admin
+function isAdmin(req, res, next) {
+  if (req.session.user && req.session.user.role === 'admin') {
+    next();
+  } else {
+    res.status(403).json({ success: false, message: 'Forbidden. Admins only.' });
+  }
+}
 
-// Get list of users for dispatch form drop-down.
+// Get all approved users and pending registration requests.
+app.get('/api/users', isAdmin, async (req, res) => {
+  try {
+    const [users] = await pool.query('SELECT * FROM users');
+    const [requests] = await pool.query('SELECT * FROM user_requests WHERE status = "pending"');
+    res.json({ success: true, users, requests });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Approve registration request.
+app.post('/api/users/approve', isAdmin, async (req, res) => {
+  const { request_id, role } = req.body;
+  try {
+    const [requests] = await pool.query('SELECT * FROM user_requests WHERE id = ?', [request_id]);
+    if (requests.length === 0) {
+      return res.status(404).json({ success: false, message: 'Request not found' });
+    }
+    const requestData = requests[0];
+    await pool.query(
+      `INSERT INTO users (first_name, last_name, company, address, suburb, city, postal_code, contact_number, email, password, role)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [requestData.first_name, requestData.last_name, requestData.company, requestData.address, requestData.suburb, requestData.city, requestData.postal_code, requestData.contact_number, requestData.email, requestData.password, role]
+    );
+    await pool.query('UPDATE user_requests SET status = "approved" WHERE id = ?', [request_id]);
+    res.json({ success: true, message: 'User approved and added successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Reject registration request.
+app.post('/api/users/reject', isAdmin, async (req, res) => {
+  const { request_id } = req.body;
+  try {
+    await pool.query('UPDATE user_requests SET status = "rejected" WHERE id = ?', [request_id]);
+    res.json({ success: true, message: 'User registration rejected' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Edit user details.
+app.put('/api/users/:id', isAdmin, async (req, res) => {
+  const userId = req.params.id;
+  const { first_name, last_name, company, address, suburb, city, postal_code, contact_number, email, role } = req.body;
+  try {
+    await pool.query(
+      `UPDATE users SET first_name=?, last_name=?, company=?, address=?, suburb=?, city=?, postal_code=?, contact_number=?, email=?, role=? WHERE id=?`,
+      [first_name, last_name, company, address, suburb, city, postal_code, contact_number, email, role, userId]
+    );
+    res.json({ success: true, message: 'User updated successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Delete a user.
+app.delete('/api/users/:id', isAdmin, async (req, res) => {
+  const userId = req.params.id;
+  try {
+    await pool.query('DELETE FROM users WHERE id=?', [userId]);
+    res.json({ success: true, message: 'User deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Get a list of users for the dispatch form.
 app.get('/api/users/list', async (req, res) => {
   try {
-    const [users] = await pool.query('SELECT id, first_name, last_name, address, company, contact_number as contact, email FROM users');
+    const [users] = await pool.query('SELECT id, first_name, last_name, address, contact_number as contact, email FROM users');
     res.json({ success: true, users });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

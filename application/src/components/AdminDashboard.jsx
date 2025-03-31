@@ -12,14 +12,10 @@ function AdminDashboard() {
 
   const fetchData = () => {
     axios.get('/api/users')
-      .then((res) => {
-        if (res.data.success) {
-          setData({ users: res.data.users, requests: res.data.requests });
-        }
+      .then(res => {
+        if (res.data.success) setData({ users: res.data.users, requests: res.data.requests });
       })
-      .catch((err) => {
-        setMessage(err.response?.data.message || 'Error fetching data');
-      });
+      .catch(err => setMessage(err.response?.data.message || 'Error fetching data'));
   };
 
   const handleApprove = async (requestId) => {
@@ -56,12 +52,9 @@ function AdminDashboard() {
     setEditingUser(user);
   };
 
-  const handleEditChange = (e) => {
+  const handleEditChange = e => {
     const { name, value } = e.target;
-    setEditingUser({
-      ...editingUser,
-      [name]: value,
-    });
+    setEditingUser({ ...editingUser, [name]: value });
   };
 
   const handleEditSave = async () => {
@@ -83,7 +76,6 @@ function AdminDashboard() {
     <div className="card p-3">
       <h2>Admin Dashboard</h2>
       {message && <div className="alert alert-danger">{message}</div>}
-
       <h4>Pending Registration Requests</h4>
       {data.requests.length === 0 ? (
         <p>No pending requests</p>
@@ -99,7 +91,7 @@ function AdminDashboard() {
             </tr>
           </thead>
           <tbody>
-            {data.requests.map((req) => (
+            {data.requests.map(req => (
               <tr key={req.id}>
                 <td>{req.first_name} {req.last_name}</td>
                 <td>{req.email}</td>
@@ -114,7 +106,6 @@ function AdminDashboard() {
           </tbody>
         </table>
       )}
-
       <h4>All Users</h4>
       {data.users.length === 0 ? (
         <p>No users found</p>
@@ -136,7 +127,7 @@ function AdminDashboard() {
             </tr>
           </thead>
           <tbody>
-            {data.users.map((user) => (
+            {data.users.map(user => (
               <tr key={user.id}>
                 <td>{user.first_name}</td>
                 <td>{user.last_name}</td>
@@ -157,8 +148,6 @@ function AdminDashboard() {
           </tbody>
         </table>
       )}
-
-      {/* Edit Modal */}
       {editingUser && (
         <div className="modal show d-block" tabIndex="-1">
           <div className="modal-dialog">

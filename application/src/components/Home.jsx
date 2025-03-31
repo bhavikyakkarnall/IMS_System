@@ -7,13 +7,9 @@ function Home({ setLoggedIn }) {
   useEffect(() => {
     axios.get('/api/home')
       .then(res => {
-        if (res.data.success) {
-          setMessage(res.data.message);
-        }
+        if (res.data.success) setMessage(res.data.message);
       })
-      .catch(err => {
-        setMessage('You are not logged in.');
-      });
+      .catch(err => setMessage('You are not logged in.'));
   }, []);
 
   return (

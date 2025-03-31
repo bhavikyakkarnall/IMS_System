@@ -3,16 +3,16 @@ import axios from 'axios';
 import Comments from './Comments';
 
 function Inventory({ userRole, userLocation }) {
-  // One search bar to match CS, serial, phone.
+  // Single search bar for CS, serial, phone.
   const [searchTerm, setSearchTerm] = useState('');
-  // Drop-down filters for status, location, type, po.
+  // Drop‑down filters for status, location, type, po.
   const [filters, setFilters] = useState({
     status: '',
     location: '',
     type: '',
     po: ''
   });
-  // Unique filter options from database.
+  // Unique filter options from the back end.
   const [filterOptions, setFilterOptions] = useState({
     status: [],
     location: [],
@@ -60,9 +60,9 @@ function Inventory({ userRole, userLocation }) {
           onChange={e => setSearchTerm(e.target.value)}
         />
       </div>
-      {/* Filter Drop-downs */}
+      {/* Filter Drop‑down Boxes */}
       <div className="row mb-3">
-        {['status', 'location', 'type', 'po'].map((key) => (
+        {['status', 'location', 'type', 'po'].map(key => (
           <div className="col-md-3" key={key}>
             <select
               className="form-select"

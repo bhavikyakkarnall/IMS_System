@@ -126,7 +126,7 @@ function DispatchForm() {
         doc.text("Comment:", margin, verticalOffset);
         verticalOffset += 7;
         doc.text(formData.comment || '', margin, verticalOffset, { maxWidth: 180 });
-        doc.save('dispatch_form.pdf');
+        doc.save(`${formData.form_number || 'dispatch_form'}.pdf`);
       } else {
         alert("Dispatch failed: " + res.data.message);
       }
@@ -139,52 +139,61 @@ function DispatchForm() {
   return (
     <div className="card p-3">
       <h2>Dispatch Form</h2>
+      <div className="d-flex justify-content-between flex-wrap gap-4">
+  {/* Left side: Tech Info */}
+  <div className="flex-grow-1" style={{ minWidth: '300px' }}>
+    <div className="mb-3">
+      <label>Select Tech:</label>
+      <select className="form-select" onChange={handleTechSelect} value={selectedTech.id || ''}>
+        <option value="">Select a tech</option>
+        {users.map(user => (
+          <option key={user.id} value={user.id}>
+            {user.first_name} {user.last_name}
+          </option>
+        ))}
+      </select>
+    </div>
+    {selectedTech && (
       <div className="mb-3">
-        <label>Select Tech:</label>
-        <select className="form-select" onChange={handleTechSelect} value={selectedTech.id || ''}>
-          <option value="">Select a tech</option>
-          {users.map(user => (
-            <option key={user.id} value={user.id}>
-              {user.first_name} {user.last_name}
-            </option>
-          ))}
-        </select>
+        <p><strong>Address:</strong> {selectedTech.address}</p>
+        <p><strong>Company:</strong> {selectedTech.company}</p>
+        <p><strong>Email:</strong> {selectedTech.email}</p>
       </div>
-      {selectedTech && (
-        <div className="mb-3">
-          <p><strong>Address:</strong> {selectedTech.address}</p>
-          <p><strong>Company:</strong> {selectedTech.company}</p>
-          <p><strong>Contact:</strong> {selectedTech.contact}</p>
-          <p><strong>Email:</strong> {selectedTech.email}</p>
-        </div>
-      )}
-      <div className="mb-3">
-        <label>Form Number:</label>
-        <input 
-          type="text" 
-          className="form-control" 
-          value={formData.form_number}
-          onChange={e => setFormData({ ...formData, form_number: e.target.value })}
-        />
-      </div>
-      <div className="mb-3">
-        <label>Tracking Number:</label>
-        <input 
-          type="text" 
-          className="form-control" 
-          value={formData.tracking_number}
-          onChange={e => setFormData({ ...formData, tracking_number: e.target.value })}
-        />
-      </div>
-      <div className="mb-3">
-        <label>Date:</label>
-        <input 
-          type="date" 
-          className="form-control" 
-          value={formData.date} 
-          readOnly 
-        />
-      </div>
+    )}
+  </div>
+
+  {/* Right side: Date, Form Number, Tracking Number */}
+  <div className="flex-grow-1" style={{ minWidth: '300px' }}>
+    <div className="mb-3">
+      <label>Date:</label>
+      <input
+        type="date"
+        className="form-control"
+        value={formData.date}
+        readOnly
+      />
+    </div>
+    <div className="mb-3">
+      <label>Form Number:</label>
+      <input
+        type="text"
+        className="form-control"
+        value={formData.form_number}
+        onChange={e => setFormData({ ...formData, form_number: e.target.value })}
+      />
+    </div>
+    <div className="mb-3">
+      <label>Tracking Number:</label>
+      <input
+        type="text"
+        className="form-control"
+        value={formData.tracking_number}
+        onChange={e => setFormData({ ...formData, tracking_number: e.target.value })}
+      />
+    </div>
+  </div>
+</div>
+
 
       {/* Items Table */}
       <h4>Items</h4>

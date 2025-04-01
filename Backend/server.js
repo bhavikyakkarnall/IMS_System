@@ -35,7 +35,7 @@ app.post('/api/login', async (req, res) => {
     if (rows.length > 0) {
       const user = rows[0];
       // Assume user's assigned location is stored in "address"
-      req.session.user = { id: user.id, name: user.first_name, role: user.role, location: user.address };
+      req.session.user = { id: user.id, name: `${user.first_name} ${user.last_name}`, role: user.role, location: user.address };
       res.json({ success: true, message: 'Login successful', user: req.session.user });
     } else {
       res.status(401).json({ success: false, message: 'Invalid email or password' });
@@ -113,25 +113,42 @@ app.get('/api/inventory/filters', async (req, res) => {
 // Retrieve inventory items using search and filters.
 app.get('/api/inventory', async (req, res) => {
   try {
+    const user = req.session.user;
     let query = 'SELECT * FROM inventory WHERE 1=1';
     const params = [];
+
+    // Search term
     if (req.query.search) {
       query += " AND (cs LIKE ? OR serial LIKE ? OR phone LIKE ?)";
       const term = `%${req.query.search}%`;
       params.push(term, term, term);
     }
+
+    // Filters
     ['status', 'location', 'type', 'po'].forEach(filter => {
       if (req.query[filter]) {
         query += ` AND ${filter} = ?`;
         params.push(req.query[filter]);
       }
     });
+
+    // Role-based filter
+    if (user && user.role !== 'admin') {
+      query += ' AND location = ?';
+      params.push(`${user.name}`);
+    }
+
     const [items] = await pool.query(query, params);
     res.json({ success: true, items });
+
+    console.log("Logged in user:", user);
+    console.log("Query being run:", query, params);
+
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
 
 // Search inventory by barcode (cs or serial)
 app.get('/api/inventory/search', async (req, res) => {
@@ -150,8 +167,22 @@ app.get('/api/inventory/search', async (req, res) => {
 // Comments endpoints.
 app.get('/api/inventory/:id/comments', async (req, res) => {
   const itemId = req.params.id;
+  const user = req.session.user;
+
+  if (!user) return res.status(403).json({ success: false, message: 'Unauthorized' });
+
   try {
-    const [comments] = await pool.query('SELECT * FROM comments WHERE item_id = ?', [itemId]);
+    let query = 'SELECT * FROM comments WHERE item_id = ? AND ';
+    let params = [itemId];
+
+    if (user.role === 'admin') {
+      query += '(visibility = "admin" OR visibility = "user+admin")';
+    } else {
+      query += '(visibility = "user+admin" AND user_id = ?)';
+      params.push(user.id);
+    }
+
+    const [comments] = await pool.query(query, params);
     res.json({ success: true, comments });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -161,11 +192,18 @@ app.get('/api/inventory/:id/comments', async (req, res) => {
 app.post('/api/inventory/:id/comments', async (req, res) => {
   const itemId = req.params.id;
   const { comment } = req.body;
-  const commentUser = req.session.user ? req.session.user.name : 'Anonymous';
+  const user = req.session.user;
+
+  if (!user) return res.status(403).json({ success: false, message: 'Unauthorized' });
+
+  const visibility = user.role === 'admin' ? 'admin' : 'user+admin';
+
   try {
-    await pool.query('INSERT INTO comments (item_id, text, user) VALUES (?, ?, ?)', [itemId, comment, commentUser]);
-    const [comments] = await pool.query('SELECT * FROM comments WHERE item_id = ?', [itemId]);
-    res.json({ success: true, comments });
+    await pool.query(
+      'INSERT INTO comments (item_id, text, user, user_id, visibility) VALUES (?, ?, ?, ?, ?)',
+      [itemId, comment, user.name, user.id, visibility]
+    );
+    res.json({ success: true, message: 'Comment added successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -182,7 +220,7 @@ app.post('/api/dispatch', async (req, res) => {
     if (techRows.length === 0)
       return res.status(404).json({ success: false, message: 'Tech not found' });
     const techName = `${techRows[0].first_name} ${techRows[0].last_name}`;
-    
+
     for (const item of items) {
       await pool.query(
         'UPDATE inventory SET location = ?, status = ? WHERE cs = ?',
@@ -277,7 +315,7 @@ app.delete('/api/users/:id', isAdmin, async (req, res) => {
 // Get a list of users for the dispatch form.
 app.get('/api/users/list', async (req, res) => {
   try {
-    const [users] = await pool.query('SELECT id, first_name, last_name, address, contact_number as contact, email FROM users');
+    const [users] = await pool.query('SELECT id, first_name, last_name, address, contact_number as contact, email, company FROM users');
     res.json({ success: true, users });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

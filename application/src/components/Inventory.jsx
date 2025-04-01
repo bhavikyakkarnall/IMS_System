@@ -3,16 +3,13 @@ import axios from 'axios';
 import Comments from './Comments';
 
 function Inventory({ userRole, userLocation }) {
-  // Single search bar for CS, serial, phone.
   const [searchTerm, setSearchTerm] = useState('');
-  // Drop‑down filters for status, location, type, po.
   const [filters, setFilters] = useState({
     status: '',
     location: '',
     type: '',
     po: ''
   });
-  // Unique filter options from the back end.
   const [filterOptions, setFilterOptions] = useState({
     status: [],
     location: [],
@@ -22,25 +19,17 @@ function Inventory({ userRole, userLocation }) {
   const [items, setItems] = useState([]);
   const [expandedCard, setExpandedCard] = useState(null);
 
-  // Load unique filter values.
   useEffect(() => {
     axios.get('/api/inventory/filters')
       .then(res => setFilterOptions(res.data))
       .catch(err => console.error(err));
   }, []);
 
-  // Fetch items whenever search term or filters change.
   useEffect(() => {
     const params = { search: searchTerm, ...filters };
     axios.get('/api/inventory', { params })
-      .then(res => {
-        let fetchedItems = res.data.items || [];
-        if (userRole !== 'admin' && userLocation) {
-          fetchedItems = fetchedItems.filter(item => item.location === userLocation);
-        }
-        setItems(fetchedItems);
-      })
-      .catch(err => console.error(err));
+  .then(res => setItems(res.data.items || []))
+  .catch(err => console.error(err));
   }, [searchTerm, filters, userRole, userLocation]);
 
   const toggleComments = (itemId) => {
@@ -50,6 +39,7 @@ function Inventory({ userRole, userLocation }) {
   return (
     <div className="card p-3">
       <h2>Inventory</h2>
+
       {/* Search Bar */}
       <div className="mb-3">
         <input
@@ -60,8 +50,9 @@ function Inventory({ userRole, userLocation }) {
           onChange={e => setSearchTerm(e.target.value)}
         />
       </div>
-      {/* Filter Drop‑down Boxes */}
-      <div className="row mb-3">
+
+      {/* Filters */}
+      <div className="row mb-4">
         {['status', 'location', 'type', 'po'].map(key => (
           <div className="col-md-3" key={key}>
             <select
@@ -78,32 +69,51 @@ function Inventory({ userRole, userLocation }) {
         ))}
       </div>
 
-      {/* Display items as cards */}
-      <div className="row">
+      {/* Display items */}
+      <div>
         {items.map(item => (
-          <div key={item.id} className="col-md-4 mb-3">
-            <div className="card h-100">
-              <div className="card-body">
-                <h5 className="card-title">{item.cs}</h5>
-                <p className="card-text">
-                  <strong>Status:</strong> {item.status}<br />
-                  <strong>Serial:</strong> {item.serial}<br />
-                  <strong>Phone:</strong> {item.phone}<br />
-                  <strong>Type:</strong> {item.type}<br />
-                  <strong>PO:</strong> {item.po}<br />
-                  <strong>Location:</strong> {item.location}<br />
-                  <strong>Updated:</strong> {item.updated_date}<br />
-                  <strong>Received:</strong> {item.received_date}
-                </p>
-                <button className="btn btn-secondary btn-sm" onClick={() => toggleComments(item.id)}>
-                  {expandedCard === item.id ? 'Hide Comments ▲' : 'Show Comments ▼'}
-                </button>
-                {expandedCard === item.id && (
-                  <div className="mt-3">
-                    <Comments itemId={item.id} userRole={userRole} />
-                  </div>
-                )}
+          <div key={item.id} className="card mb-4">
+            <div className="card-body">
+              <h5 className="card-title">CS: {item.cs}</h5>
+              <div className="row">
+                <div className="col-md-6 mb-2">
+                  <strong>Status:</strong> {item.status}
+                </div>
+                <div className="col-md-6 mb-2">
+                  <strong>Serial Number:</strong> {item.serial}
+                </div>
+                <div className="col-md-6 mb-2">
+                  <strong>Phone:</strong> {item.phone}
+                </div>
+                <div className="col-md-6 mb-2">
+                  <strong>Type:</strong> {item.type}
+                </div>
+                <div className="col-md-6 mb-2">
+                  <strong>PO Number:</strong> {item.po}
+                </div>
+                <div className="col-md-6 mb-2">
+                  <strong>Location:</strong> {item.location}
+                </div>
+                <div className="col-md-6 mb-2">
+                  <strong>Updated Date:</strong> {item.updated_date}
+                </div>
+                <div className="col-md-6 mb-2">
+                  <strong>Received Date:</strong> {item.received_date}
+                </div>
               </div>
+
+              <button
+                className="btn btn-secondary btn-sm mt-3"
+                onClick={() => toggleComments(item.id)}
+              >
+                {expandedCard === item.id ? 'Hide Comments ▲' : 'Show Comments ▼'}
+              </button>
+
+              {expandedCard === item.id && (
+                <div className="mt-3">
+                  <Comments itemId={item.id} userRole={userRole} />
+                </div>
+              )}
             </div>
           </div>
         ))}

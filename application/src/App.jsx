@@ -38,7 +38,7 @@ function App() {
         <nav className="navbar navbar-expand-lg navbar-dark bg-primary px-4 py-2 shadow-sm">
           <div className="d-flex align-items-center me-4">
             <img src={logo} alt="Logo" style={{ height: '40px', marginRight: '10px' }} />
-            <span className="navbar-brand mb-0 h5">MyApp</span>
+            <span className="navbar-brand mb-0 h5">ADT Care</span>
           </div>
 
           <div className="d-flex align-items-center flex-grow-1">

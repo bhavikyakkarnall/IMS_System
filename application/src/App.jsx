@@ -8,13 +8,16 @@ import Home from './components/Home';
 import AdminDashboard from './components/AdminDashboard';
 import Inventory from './components/Inventory';
 import DispatchForm from './components/DispatchForm';
+import ReceiveItems from './components/ReceiveItems';
+import UploadInventory from './components/UploadInventory'; // ✅ Import UploadInventory
 import Logout from './components/Logout';
-import logo from './assets/logo.png'; // adjust this path as needed
+import logo from './assets/logo.png';
 
 function App() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [userRole, setUserRole] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
+  const [userId, setUserId] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,6 +27,7 @@ function App() {
           setLoggedIn(true);
           setUserRole(res.data.user.role);
           setUserLocation(res.data.user.location);
+          setUserId(res.data.user.id);
         }
       })
       .catch(() => setLoggedIn(false))
@@ -46,7 +50,11 @@ function App() {
             <Link to="/inventory" className="nav-link text-white me-3">Inventory</Link>
             <Link to="/dispatch" className="nav-link text-white me-3">Dispatch</Link>
             {userRole === 'admin' && (
-              <Link to="/admin" className="nav-link text-white me-3">Admin Dashboard</Link>
+              <>
+                <Link to="/admin" className="nav-link text-white me-3">Admin Dashboard</Link>
+                <Link to="/receive" className="nav-link text-white me-3">Receive Items</Link>
+                <Link to="/upload-inventory" className="nav-link text-white me-3">Upload Inventory</Link> {/* ✅ Upload link */}
+              </>
             )}
           </div>
 
@@ -63,7 +71,13 @@ function App() {
               <Route path="/" element={<Home setLoggedIn={setLoggedIn} />} />
               <Route path="/inventory" element={<Inventory userRole={userRole} userLocation={userLocation} />} />
               <Route path="/dispatch" element={<DispatchForm />} />
-              {userRole === 'admin' && <Route path="/admin" element={<AdminDashboard />} />}
+              {userRole === 'admin' && (
+                <>
+                  <Route path="/admin" element={<AdminDashboard />} />
+                  <Route path="/receive" element={<ReceiveItems userId={userId} />} />
+                  <Route path="/upload-inventory" element={<UploadInventory />} /> {/* ✅ Upload route */}
+                </>
+              )}
               <Route path="/logout" element={<Logout setLoggedIn={setLoggedIn} />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>

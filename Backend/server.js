@@ -3,6 +3,13 @@ const express = require('express');
 const session = require('express-session');
 const bodyParser = require('body-parser');
 const mysql = require('mysql2/promise');
+const multer = require('multer');
+const csv = require('fast-csv');
+const fs = require('fs');
+const path = require('path');
+
+const upload = multer({ dest: 'uploads/' });
+
 
 const app = express();
 
@@ -149,7 +156,6 @@ app.get('/api/inventory', async (req, res) => {
   }
 });
 
-
 // Search inventory by barcode (cs or serial)
 app.get('/api/inventory/search', async (req, res) => {
   const { barcode } = req.query;
@@ -206,6 +212,91 @@ app.post('/api/inventory/:id/comments', async (req, res) => {
     res.json({ success: true, message: 'Comment added successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.post('/api/inventory/receive', async (req, res) => {
+  const user = req.session.user;
+  const { csList } = req.body;
+
+  if (!user || user.role !== 'admin') {
+    return res.status(403).json({ success: false, message: 'Unauthorized: Admins only' });
+  }
+
+  if (!csList || !Array.isArray(csList) || csList.length === 0) {
+    return res.status(400).json({ success: false, message: 'Invalid request data' });
+  }
+
+  try {
+    const updates = csList.map(cs =>
+      pool.query(
+        'UPDATE inventory SET location = ?, status = ? WHERE cs = ?',
+        ['Warehouse', 'Storeroom', cs]  // 👈 Change status here
+      )
+    );
+
+    await Promise.all(updates);
+    res.json({ success: true, message: 'Items moved to Warehouse with Storeroom status.' });
+  } catch (err) {
+    console.error('Receive Error:', err);
+    res.status(500).json({ success: false, message: 'Update failed' });
+  }
+});
+
+app.post('/api/inventory/upload', isAdmin, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+
+  const filePath = path.resolve(req.file.path);
+  const items = [];
+  const errors = [];
+  const existingCs = new Set();
+
+  try {
+    const [existingRows] = await pool.query('SELECT cs FROM inventory');
+    existingRows.forEach(row => existingCs.add(row.cs));
+
+    fs.createReadStream(filePath)
+      .pipe(csv.parse({ headers: true }))
+      .on('error', error => {
+        console.error('CSV Error:', error);
+        res.status(500).json({ success: false, message: 'Failed to parse CSV' });
+      })
+      .on('data', row => {
+        const { cs, serial, phone, type, status, location, po } = row;
+        if (!cs || !serial || !phone || !type || !status || !location || !po) {
+          errors.push(`Skipping row with missing fields: ${JSON.stringify(row)}`);
+          return;
+        }
+        if (existingCs.has(cs)) {
+          errors.push(`Duplicate CS skipped: ${cs}`);
+          return;
+        }
+        items.push([cs, serial, phone, type, status, location, po]);
+        existingCs.add(cs); // add to prevent duplicates within the file
+      })
+      .on('end', async () => {
+        try {
+          if (items.length > 0) {
+            await pool.query(
+              `INSERT INTO inventory (cs, serial, phone, type, status, location, po)
+               VALUES ?`,
+              [items]
+            );
+          }
+          fs.unlinkSync(filePath);
+          res.json({
+            success: true,
+            message: `${items.length} items added. ${errors.length ? errors.length + ' rows skipped.' : ''}`,
+            skipped: errors,
+          });
+        } catch (err) {
+          console.error('Insert Error:', err);
+          res.status(500).json({ success: false, message: 'Database insert failed' });
+        }
+      });
+  } catch (error) {
+    console.error('Upload error:', error);
+    res.status(500).json({ success: false, message: 'Upload failed' });
   }
 });
 

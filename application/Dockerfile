@@ -1,4 +1,3 @@
-# Example: React App
 FROM node:18 AS build
 WORKDIR /app
 COPY . .

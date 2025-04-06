@@ -9,7 +9,8 @@ import AdminDashboard from './components/AdminDashboard';
 import Inventory from './components/Inventory';
 import DispatchForm from './components/DispatchForm';
 import ReceiveItems from './components/ReceiveItems';
-import UploadInventory from './components/UploadInventory'; // ✅ Import UploadInventory
+import UploadInventory from './components/UploadInventory';
+import TechnicianReturns from './components/TechnicianReturns';
 import Logout from './components/Logout';
 import logo from './assets/logo.png';
 
@@ -48,12 +49,13 @@ function App() {
           <div className="d-flex align-items-center flex-grow-1">
             <Link to="/" className="nav-link text-white me-3">Home</Link>
             <Link to="/inventory" className="nav-link text-white me-3">Inventory</Link>
-            <Link to="/dispatch" className="nav-link text-white me-3">Dispatch</Link>
+            <Link to="/technician-return" className="nav-link text-white me-3">Technician Return</Link>
             {userRole === 'admin' && (
               <>
+                <Link to="/dispatch" className="nav-link text-white me-3">Dispatch</Link>
                 <Link to="/admin" className="nav-link text-white me-3">Admin Dashboard</Link>
                 <Link to="/receive" className="nav-link text-white me-3">Receive Items</Link>
-                <Link to="/upload-inventory" className="nav-link text-white me-3">Upload Inventory</Link> {/* ✅ Upload link */}
+                <Link to="/upload-inventory" className="nav-link text-white me-3">Upload Inventory</Link>
               </>
             )}
           </div>
@@ -70,12 +72,13 @@ function App() {
             <>
               <Route path="/" element={<Home setLoggedIn={setLoggedIn} />} />
               <Route path="/inventory" element={<Inventory userRole={userRole} userLocation={userLocation} />} />
-              <Route path="/dispatch" element={<DispatchForm />} />
+              <Route path="/technician-return" element={<TechnicianReturns />} />
               {userRole === 'admin' && (
                 <>
+                  <Route path="/dispatch" element={<DispatchForm />} />
                   <Route path="/admin" element={<AdminDashboard />} />
                   <Route path="/receive" element={<ReceiveItems userId={userId} />} />
-                  <Route path="/upload-inventory" element={<UploadInventory />} /> {/* ✅ Upload route */}
+                  <Route path="/upload-inventory" element={<UploadInventory />} />
                 </>
               )}
               <Route path="/logout" element={<Logout setLoggedIn={setLoggedIn} />} />

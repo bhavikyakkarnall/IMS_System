@@ -170,6 +170,42 @@ app.get('/api/inventory/search', async (req, res) => {
   }
 });
 
+app.post('/api/inventory/transitBatch', async (req, res) => {
+  const user = req.session.user;
+  const { csList } = req.body;
+
+  // Check that user is logged in only
+  if (!user) {
+    return res.status(403).json({ success: false, message: 'Unauthorized: Please log in' });
+  }
+
+  if (!csList || !Array.isArray(csList) || csList.length === 0) {
+    return res.status(400).json({ success: false, message: 'Invalid request data' });
+  }
+
+  try {
+    // Create placeholders for parameterized query
+    const placeholders = csList.map(() => '?').join(',');
+    const [result] = await pool.query(
+      `UPDATE inventory 
+       SET status = 'Transit to Office', location = 'Office' 
+       WHERE cs IN (${placeholders})`,
+      csList
+    );
+
+    if (result.affectedRows > 0) {
+      res.json({ success: true, message: 'Items updated successfully' });
+    } else {
+      res.json({ success: false, message: 'No items were updated. Please check the codes.' });
+    }
+  } catch (err) {
+    console.error('Transit Batch Error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+
+
 // Comments endpoints.
 app.get('/api/inventory/:id/comments', async (req, res) => {
   const itemId = req.params.id;

@@ -9,8 +9,6 @@ const fs = require('fs');
 const path = require('path');
 
 const upload = multer({ dest: 'uploads/' });
-
-
 const app = express();
 
 // Middleware
@@ -41,8 +39,13 @@ app.post('/api/login', async (req, res) => {
     );
     if (rows.length > 0) {
       const user = rows[0];
-      // Assume user's assigned location is stored in "address"
-      req.session.user = { id: user.id, name: `${user.first_name} ${user.last_name}`, role: user.role, location: user.address };
+      // Assume the user's assigned location is stored in "address"
+      req.session.user = { 
+        id: user.id, 
+        name: `${user.first_name} ${user.last_name}`, 
+        role: user.role, 
+        location: user.address 
+      };
       res.json({ success: true, message: 'Login successful', user: req.session.user });
     } else {
       res.status(401).json({ success: false, message: 'Invalid email or password' });
@@ -54,7 +57,8 @@ app.post('/api/login', async (req, res) => {
 
 app.post('/api/logout', (req, res) => {
   req.session.destroy(err => {
-    if (err) return res.status(500).json({ success: false, message: 'Logout failed' });
+    if (err)
+      return res.status(500).json({ success: false, message: 'Logout failed' });
     res.clearCookie('connect.sid');
     res.json({ success: true, message: 'Logged out successfully' });
   });
@@ -64,7 +68,8 @@ app.post('/api/register', async (req, res) => {
   const { first_name, last_name, company, address, suburb, city, postal_code, contact_number, email, password } = req.body;
   try {
     await pool.query(
-      `INSERT INTO user_requests (first_name, last_name, company, address, suburb, city, postal_code, contact_number, email, password, status)
+      `INSERT INTO user_requests 
+       (first_name, last_name, company, address, suburb, city, postal_code, contact_number, email, password, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [first_name, last_name, company, address, suburb, city, postal_code, contact_number, email, password, 'pending']
     );
@@ -124,14 +129,14 @@ app.get('/api/inventory', async (req, res) => {
     let query = 'SELECT * FROM inventory WHERE 1=1';
     const params = [];
 
-    // Search term
+    // Apply search term if provided.
     if (req.query.search) {
       query += " AND (cs LIKE ? OR serial LIKE ? OR phone LIKE ?)";
       const term = `%${req.query.search}%`;
       params.push(term, term, term);
     }
 
-    // Filters
+    // Apply additional filters.
     ['status', 'location', 'type', 'po'].forEach(filter => {
       if (req.query[filter]) {
         query += ` AND ${filter} = ?`;
@@ -139,18 +144,14 @@ app.get('/api/inventory', async (req, res) => {
       }
     });
 
-    // Role-based filter
-    if (user && user.role !== 'admin') {
+    // For users who are not one of the allowed roles, restrict results based on location.
+    if (user && !['super-admin', 'admin', 'staff', 'company-admin', 'user'].includes(user.role)) {
       query += ' AND location = ?';
-      params.push(`${user.name}`);
+      params.push(user.location);
     }
 
     const [items] = await pool.query(query, params);
     res.json({ success: true, items });
-
-    console.log("Logged in user:", user);
-    console.log("Query being run:", query, params);
-
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -160,7 +161,10 @@ app.get('/api/inventory', async (req, res) => {
 app.get('/api/inventory/search', async (req, res) => {
   const { barcode } = req.query;
   try {
-    const [rows] = await pool.query('SELECT * FROM inventory WHERE cs = ? OR serial = ?', [barcode, barcode]);
+    const [rows] = await pool.query(
+      'SELECT * FROM inventory WHERE cs = ? OR serial = ?', 
+      [barcode, barcode]
+    );
     if (rows.length > 0)
       res.json({ success: true, item: rows[0] });
     else
@@ -174,7 +178,6 @@ app.post('/api/inventory/transitBatch', async (req, res) => {
   const user = req.session.user;
   const { csList } = req.body;
 
-  // Check that user is logged in only
   if (!user) {
     return res.status(403).json({ success: false, message: 'Unauthorized: Please log in' });
   }
@@ -184,7 +187,6 @@ app.post('/api/inventory/transitBatch', async (req, res) => {
   }
 
   try {
-    // Create placeholders for parameterized query
     const placeholders = csList.map(() => '?').join(',');
     const [result] = await pool.query(
       `UPDATE inventory 
@@ -212,12 +214,12 @@ app.put('/api/inventory/:id', async (req, res) => {
   const itemId = req.params.id;
   let payload = req.body;
 
-  // If staff, allow only the status field
+  // If the user is staff, only allow updating the status.
   if (user.role === 'staff') {
     payload = { status: payload.status };
   }
 
-  // Build query dynamically from payload keys (sanitize your inputs for production!)
+  // Build a dynamic query using the payload keys.
   const fields = Object.keys(payload).map(key => `${key} = ?`).join(', ');
   const values = Object.values(payload);
   values.push(itemId);
@@ -233,12 +235,14 @@ app.put('/api/inventory/:id', async (req, res) => {
   }
 });
 
-// Comments endpoints.
+// ---------------- Comments Endpoints ----------------
+
 app.get('/api/inventory/:id/comments', async (req, res) => {
   const itemId = req.params.id;
   const user = req.session.user;
 
-  if (!user) return res.status(403).json({ success: false, message: 'Unauthorized' });
+  if (!user)
+    return res.status(403).json({ success: false, message: 'Unauthorized' });
 
   try {
     let query = 'SELECT * FROM comments WHERE item_id = ? AND ';
@@ -263,9 +267,10 @@ app.post('/api/inventory/:id/comments', async (req, res) => {
   const { comment } = req.body;
   const user = req.session.user;
 
-  if (!user) return res.status(403).json({ success: false, message: 'Unauthorized' });
+  if (!user)
+    return res.status(403).json({ success: false, message: 'Unauthorized' });
 
-  const visibility = user.role === 'admin' ? 'admin' : 'user+admin';
+  const visibility = (user.role === 'admin') ? 'admin' : 'user+admin';
 
   try {
     await pool.query(
@@ -278,12 +283,15 @@ app.post('/api/inventory/:id/comments', async (req, res) => {
   }
 });
 
+// ---------------- Inventory Receive & Upload Endpoints ----------------
+
 app.post('/api/inventory/receive', async (req, res) => {
   const user = req.session.user;
   const { csList } = req.body;
 
-  if (!user || user.role !== 'admin') {
-    return res.status(403).json({ success: false, message: 'Unauthorized: Admins only' });
+  // Only admin and super-admin can use this endpoint.
+  if (!user || !['admin', 'super-admin'].includes(user.role)) {
+    return res.status(403).json({ success: false, message: 'Unauthorized: Admin privileges required.' });
   }
 
   if (!csList || !Array.isArray(csList) || csList.length === 0) {
@@ -294,7 +302,7 @@ app.post('/api/inventory/receive', async (req, res) => {
     const updates = csList.map(cs =>
       pool.query(
         'UPDATE inventory SET location = ?, status = ? WHERE cs = ?',
-        ['Warehouse', 'Storeroom', cs]  // 👈 Change status here
+        ['Warehouse', 'Storeroom', cs]
       )
     );
 
@@ -306,8 +314,18 @@ app.post('/api/inventory/receive', async (req, res) => {
   }
 });
 
+// Update the isAdmin middleware to include super-admin as well.
+function isAdmin(req, res, next) {
+  if (req.session.user && (req.session.user.role === 'admin' || req.session.user.role === 'super-admin')) {
+    next();
+  } else {
+    res.status(403).json({ success: false, message: 'Forbidden. Admin privileges required.' });
+  }
+}
+
 app.post('/api/inventory/upload', isAdmin, upload.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+  if (!req.file)
+    return res.status(400).json({ success: false, message: 'No file uploaded' });
 
   const filePath = path.resolve(req.file.path);
   const items = [];
@@ -335,7 +353,7 @@ app.post('/api/inventory/upload', isAdmin, upload.single('file'), async (req, re
           return;
         }
         items.push([cs, serial, phone, type, status, location, po]);
-        existingCs.add(cs); // add to prevent duplicates within the file
+        existingCs.add(cs);
       })
       .on('end', async () => {
         try {
@@ -365,8 +383,6 @@ app.post('/api/inventory/upload', isAdmin, upload.single('file'), async (req, re
 
 // ---------------- Dispatch Endpoint ----------------
 
-// Endpoint to process dispatch form submissions.
-// For each item, update the inventory by setting location to the tech's name and status to "Dispatched".
 app.post('/api/dispatch', async (req, res) => {
   const { techId, items } = req.body;
   try {
@@ -388,16 +404,7 @@ app.post('/api/dispatch', async (req, res) => {
 });
 
 // ---------------- Admin & User Management Endpoints ----------------
-// Middleware to check for admin
-function isAdmin(req, res, next) {
-  if (req.session.user && req.session.user.role === 'admin') {
-    next();
-  } else {
-    res.status(403).json({ success: false, message: 'Forbidden. Admins only.' });
-  }
-}
 
-// Get all approved users and pending registration requests.
 app.get('/api/users', isAdmin, async (req, res) => {
   try {
     const [users] = await pool.query('SELECT * FROM users');
@@ -408,7 +415,6 @@ app.get('/api/users', isAdmin, async (req, res) => {
   }
 });
 
-// Approve registration request.
 app.post('/api/users/approve', isAdmin, async (req, res) => {
   const { request_id, role } = req.body;
   try {
@@ -429,7 +435,6 @@ app.post('/api/users/approve', isAdmin, async (req, res) => {
   }
 });
 
-// Reject registration request.
 app.post('/api/users/reject', isAdmin, async (req, res) => {
   const { request_id } = req.body;
   try {
@@ -440,7 +445,6 @@ app.post('/api/users/reject', isAdmin, async (req, res) => {
   }
 });
 
-// Edit user details.
 app.put('/api/users/:id', isAdmin, async (req, res) => {
   const userId = req.params.id;
   const { first_name, last_name, company, address, suburb, city, postal_code, contact_number, email, role } = req.body;
@@ -455,7 +459,6 @@ app.put('/api/users/:id', isAdmin, async (req, res) => {
   }
 });
 
-// Delete a user.
 app.delete('/api/users/:id', isAdmin, async (req, res) => {
   const userId = req.params.id;
   try {
@@ -466,7 +469,6 @@ app.delete('/api/users/:id', isAdmin, async (req, res) => {
   }
 });
 
-// Get a list of users for the dispatch form.
 app.get('/api/users/list', async (req, res) => {
   try {
     const [users] = await pool.query('SELECT id, first_name, last_name, address, contact_number as contact, email, company FROM users');

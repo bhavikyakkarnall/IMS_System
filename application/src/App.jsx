@@ -21,6 +21,7 @@ function App() {
   const [userId, setUserId] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Check login status and get user data
   useEffect(() => {
     axios.get('/api/home')
       .then(res => {
@@ -37,6 +38,15 @@ function App() {
 
   if (loading) return <div className="container mt-3">Loading...</div>;
 
+  // Helper functions to check access
+  const canAccessTechReturn = () =>
+    ['super-admin', 'company-admin', 'user'].includes(userRole);
+  const canAccessAdminActions = () =>
+    ['super-admin', 'admin'].includes(userRole);
+  const canAccessAdminDashboard = () =>
+    userRole === 'super-admin';
+  const isStaffOnly = () => userRole === 'staff';
+
   return (
     <>
       {loggedIn && (
@@ -49,14 +59,24 @@ function App() {
           <div className="d-flex align-items-center flex-grow-1">
             <Link to="/" className="nav-link text-white me-3">Home</Link>
             <Link to="/inventory" className="nav-link text-white me-3">Inventory</Link>
-            <Link to="/technician-return" className="nav-link text-white me-3">Technician Return</Link>
-            {userRole === 'admin' && (
+            
+            {/* Only show Technician Return for roles that are allowed */}
+            {canAccessTechReturn() && (
+              <Link to="/technician-return" className="nav-link text-white me-3">Technician Return</Link>
+            )}
+            
+            {/* Only show admin actions for super-admin and admin */}
+            {canAccessAdminActions() && (
               <>
                 <Link to="/dispatch" className="nav-link text-white me-3">Dispatch</Link>
-                <Link to="/admin" className="nav-link text-white me-3">Admin Dashboard</Link>
                 <Link to="/receive" className="nav-link text-white me-3">Receive Items</Link>
                 <Link to="/upload-inventory" className="nav-link text-white me-3">Upload Inventory</Link>
               </>
+            )}
+            
+            {/* Admin Dashboard available only to super-admin */}
+            {canAccessAdminDashboard() && (
+              <Link to="/admin" className="nav-link text-white me-3">Admin Dashboard</Link>
             )}
           </div>
 
@@ -72,16 +92,23 @@ function App() {
             <>
               <Route path="/" element={<Home setLoggedIn={setLoggedIn} />} />
               <Route path="/inventory" element={<Inventory userRole={userRole} userLocation={userLocation} />} />
-              <Route path="/technician-return" element={<TechnicianReturns />} />
+              
+              {canAccessTechReturn() && (
+                <Route path="/technician-return" element={<TechnicianReturns />} />
+              )}
 
-              {userRole === 'admin' && (
+              {canAccessAdminDashboard() && (
+                <Route path="/admin" element={<AdminDashboard />} />
+              )}
+
+              {canAccessAdminActions() && (
                 <>
                   <Route path="/dispatch" element={<DispatchForm />} />
-                  <Route path="/admin" element={<AdminDashboard />} />
                   <Route path="/receive" element={<ReceiveItems userId={userId} />} />
                   <Route path="/upload-inventory" element={<UploadInventory />} />
                 </>
               )}
+
               <Route path="/logout" element={<Logout setLoggedIn={setLoggedIn} />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </>

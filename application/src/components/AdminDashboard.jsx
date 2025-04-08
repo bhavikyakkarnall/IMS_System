@@ -6,6 +6,11 @@ function AdminDashboard() {
   const [message, setMessage] = useState('');
   const [editingUser, setEditingUser] = useState(null);
 
+  // State for Approval Modal
+  const [approvalModalOpen, setApprovalModalOpen] = useState(false);
+  const [approvalRequestId, setApprovalRequestId] = useState(null);
+  const [selectedRole, setSelectedRole] = useState('user');
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -13,20 +18,34 @@ function AdminDashboard() {
   const fetchData = () => {
     axios.get('/api/users')
       .then(res => {
-        if (res.data.success) setData({ users: res.data.users, requests: res.data.requests });
+        if (res.data.success) {
+          setData({ users: res.data.users, requests: res.data.requests });
+        }
       })
       .catch(err => setMessage(err.response?.data.message || 'Error fetching data'));
   };
 
-  const handleApprove = async (requestId) => {
-    const role = prompt("Enter role for this user (e.g., user, admin):");
-    if (role) {
-      try {
-        await axios.post('/api/users/approve', { request_id: requestId, role });
-        fetchData();
-      } catch (err) {
-        console.error('Approval failed', err);
-      }
+  // Open approval modal and set the current request ID.
+  const openApprovalModal = (requestId) => {
+    setApprovalModalOpen(true);
+    setApprovalRequestId(requestId);
+    setSelectedRole('user');  // default role on modal open
+  };
+
+  // Close approval modal and clear related state.
+  const closeApprovalModal = () => {
+    setApprovalModalOpen(false);
+    setApprovalRequestId(null);
+  };
+
+  // Process the approval using the selected role.
+  const handleApprovalSubmit = async () => {
+    try {
+      await axios.post('/api/users/approve', { request_id: approvalRequestId, role: selectedRole });
+      fetchData();
+      closeApprovalModal();
+    } catch (err) {
+      console.error('Approval failed', err);
     }
   };
 
@@ -76,6 +95,7 @@ function AdminDashboard() {
     <div className="card p-3">
       <h2>Admin Dashboard</h2>
       {message && <div className="alert alert-danger">{message}</div>}
+      
       <h4>Pending Registration Requests</h4>
       {data.requests.length === 0 ? (
         <p>No pending requests</p>
@@ -98,14 +118,25 @@ function AdminDashboard() {
                 <td>{req.company}</td>
                 <td>{req.contact_number}</td>
                 <td>
-                  <button className="btn btn-success btn-sm me-2" onClick={() => handleApprove(req.id)}>Approve</button>
-                  <button className="btn btn-danger btn-sm" onClick={() => handleReject(req.id)}>Reject</button>
+                  <button
+                    className="btn btn-success btn-sm me-2"
+                    onClick={() => openApprovalModal(req.id)}
+                  >
+                    Approve
+                  </button>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    onClick={() => handleReject(req.id)}
+                  >
+                    Reject
+                  </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
+
       <h4>All Users</h4>
       {data.users.length === 0 ? (
         <p>No users found</p>
@@ -140,14 +171,61 @@ function AdminDashboard() {
                 <td>{user.email}</td>
                 <td>{user.role}</td>
                 <td>
-                  <button className="btn btn-primary btn-sm me-2" onClick={() => handleEditClick(user)}>Edit</button>
-                  <button className="btn btn-danger btn-sm" onClick={() => handleDelete(user.id)}>Delete</button>
+                  <button
+                    className="btn btn-primary btn-sm me-2"
+                    onClick={() => handleEditClick(user)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    onClick={() => handleDelete(user.id)}
+                  >
+                    Delete
+                  </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
+
+      {/* Approval Modal */}
+      {approvalModalOpen && (
+        <div className="modal show d-block" tabIndex="-1">
+          <div className="modal-dialog">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title">Approve User & Select Role</h5>
+                <button type="button" className="btn-close" onClick={closeApprovalModal}></button>
+              </div>
+              <div className="modal-body">
+                <div className="mb-3">
+                  <label htmlFor="roleSelect" className="form-label">Select Role:</label>
+                  <select
+                    id="roleSelect"
+                    className="form-select"
+                    value={selectedRole}
+                    onChange={(e) => setSelectedRole(e.target.value)}
+                  >
+                    <option value="super-admin">super-admin</option>
+                    <option value="admin">admin</option>
+                    <option value="staff">staff</option>
+                    <option value="company-admin">company-admin</option>
+                    <option value="user">user</option>
+                  </select>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={closeApprovalModal}>Cancel</button>
+                <button className="btn btn-primary" onClick={handleApprovalSubmit}>Approve</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
       {editingUser && (
         <div className="modal show d-block" tabIndex="-1">
           <div className="modal-dialog">
@@ -160,43 +238,103 @@ function AdminDashboard() {
                 <form>
                   <div className="mb-3">
                     <label>First Name:</label>
-                    <input type="text" name="first_name" className="form-control" value={editingUser.first_name} onChange={handleEditChange} />
+                    <input
+                      type="text"
+                      name="first_name"
+                      className="form-control"
+                      value={editingUser.first_name}
+                      onChange={handleEditChange}
+                    />
                   </div>
                   <div className="mb-3">
                     <label>Last Name:</label>
-                    <input type="text" name="last_name" className="form-control" value={editingUser.last_name} onChange={handleEditChange} />
+                    <input
+                      type="text"
+                      name="last_name"
+                      className="form-control"
+                      value={editingUser.last_name}
+                      onChange={handleEditChange}
+                    />
                   </div>
                   <div className="mb-3">
                     <label>Company:</label>
-                    <input type="text" name="company" className="form-control" value={editingUser.company} onChange={handleEditChange} />
+                    <input
+                      type="text"
+                      name="company"
+                      className="form-control"
+                      value={editingUser.company}
+                      onChange={handleEditChange}
+                    />
                   </div>
                   <div className="mb-3">
                     <label>Address:</label>
-                    <input type="text" name="address" className="form-control" value={editingUser.address} onChange={handleEditChange} />
+                    <input
+                      type="text"
+                      name="address"
+                      className="form-control"
+                      value={editingUser.address}
+                      onChange={handleEditChange}
+                    />
                   </div>
                   <div className="mb-3">
                     <label>Suburb:</label>
-                    <input type="text" name="suburb" className="form-control" value={editingUser.suburb} onChange={handleEditChange} />
+                    <input
+                      type="text"
+                      name="suburb"
+                      className="form-control"
+                      value={editingUser.suburb}
+                      onChange={handleEditChange}
+                    />
                   </div>
                   <div className="mb-3">
                     <label>City:</label>
-                    <input type="text" name="city" className="form-control" value={editingUser.city} onChange={handleEditChange} />
+                    <input
+                      type="text"
+                      name="city"
+                      className="form-control"
+                      value={editingUser.city}
+                      onChange={handleEditChange}
+                    />
                   </div>
                   <div className="mb-3">
                     <label>Postal Code:</label>
-                    <input type="text" name="postal_code" className="form-control" value={editingUser.postal_code} onChange={handleEditChange} />
+                    <input
+                      type="text"
+                      name="postal_code"
+                      className="form-control"
+                      value={editingUser.postal_code}
+                      onChange={handleEditChange}
+                    />
                   </div>
                   <div className="mb-3">
                     <label>Contact Number:</label>
-                    <input type="text" name="contact_number" className="form-control" value={editingUser.contact_number} onChange={handleEditChange} />
+                    <input
+                      type="text"
+                      name="contact_number"
+                      className="form-control"
+                      value={editingUser.contact_number}
+                      onChange={handleEditChange}
+                    />
                   </div>
                   <div className="mb-3">
                     <label>Email:</label>
-                    <input type="email" name="email" className="form-control" value={editingUser.email} onChange={handleEditChange} />
+                    <input
+                      type="email"
+                      name="email"
+                      className="form-control"
+                      value={editingUser.email}
+                      onChange={handleEditChange}
+                    />
                   </div>
                   <div className="mb-3">
                     <label>Role:</label>
-                    <input type="text" name="role" className="form-control" value={editingUser.role} onChange={handleEditChange} />
+                    <input
+                      type="text"
+                      name="role"
+                      className="form-control"
+                      value={editingUser.role}
+                      onChange={handleEditChange}
+                    />
                   </div>
                 </form>
               </div>

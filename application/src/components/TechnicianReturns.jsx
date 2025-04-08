@@ -13,7 +13,7 @@ function TechnicianReturns() {
     axios.get('/api/home')
       .then(res => {
         // Optionally, you can log or use the user info, but don't redirect based on role.
-        console.log("Logged in user:", res.data.user);
+        // console.log("Logged in user:", res.data.user);
       })
       .catch(() => navigate('/'));
   }, [navigate]);

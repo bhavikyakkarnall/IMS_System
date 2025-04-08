@@ -204,7 +204,34 @@ app.post('/api/inventory/transitBatch', async (req, res) => {
   }
 });
 
+app.put('/api/inventory/:id', async (req, res) => {
+  const user = req.session.user;
+  if (!user) {
+    return res.status(403).json({ success: false, message: 'Unauthorized' });
+  }
+  const itemId = req.params.id;
+  let payload = req.body;
 
+  // If staff, allow only the status field
+  if (user.role === 'staff') {
+    payload = { status: payload.status };
+  }
+
+  // Build query dynamically from payload keys (sanitize your inputs for production!)
+  const fields = Object.keys(payload).map(key => `${key} = ?`).join(', ');
+  const values = Object.values(payload);
+  values.push(itemId);
+
+  try {
+    const [result] = await pool.query(`UPDATE inventory SET ${fields} WHERE id = ?`, values);
+    if (result.affectedRows > 0)
+      res.json({ success: true, message: 'Item updated successfully' });
+    else
+      res.status(404).json({ success: false, message: 'Item not found' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 // Comments endpoints.
 app.get('/api/inventory/:id/comments', async (req, res) => {

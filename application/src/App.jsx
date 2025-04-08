@@ -73,6 +73,7 @@ function App() {
               <Route path="/" element={<Home setLoggedIn={setLoggedIn} />} />
               <Route path="/inventory" element={<Inventory userRole={userRole} userLocation={userLocation} />} />
               <Route path="/technician-return" element={<TechnicianReturns />} />
+
               {userRole === 'admin' && (
                 <>
                   <Route path="/dispatch" element={<DispatchForm />} />

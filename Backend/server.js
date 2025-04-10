@@ -39,12 +39,13 @@ app.post('/api/login', async (req, res) => {
     );
     if (rows.length > 0) {
       const user = rows[0];
-      // Assume the user's assigned location is stored in "address"
-      req.session.user = { 
-        id: user.id, 
-        name: `${user.first_name} ${user.last_name}`, 
-        role: user.role, 
-        location: user.address 
+      // Store full name as user.name and include company.
+      req.session.user = {
+        id: user.id,
+        name: `${user.first_name} ${user.last_name}`,
+        role: user.role,
+        address: user.address,
+        company: user.company
       };
       res.json({ success: true, message: 'Login successful', user: req.session.user });
     } else {
@@ -104,65 +105,116 @@ app.get('/api/home', (req, res) => {
 
 // ---------------- Inventory Endpoints ----------------
 
-// Endpoint for unique filter values.
+// /api/inventory/filters now returns only non-blank companies.
 app.get('/api/inventory/filters', async (req, res) => {
   try {
     const [statusRows] = await pool.query('SELECT DISTINCT status FROM inventory');
     const [locationRows] = await pool.query('SELECT DISTINCT location FROM inventory');
     const [typeRows] = await pool.query('SELECT DISTINCT type FROM inventory');
     const [poRows] = await pool.query('SELECT DISTINCT po FROM inventory');
+    // Return only companies that are not NULL or empty.
+    const [companyRows] = await pool.query("SELECT DISTINCT company FROM users WHERE company IS NOT NULL AND company <> ''");
     res.json({
       status: statusRows.map(r => r.status),
       location: locationRows.map(r => r.location),
       type: typeRows.map(r => r.type),
-      po: poRows.map(r => r.po)
+      po: poRows.map(r => r.po),
+      company: companyRows.map(r => r.company)
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// Retrieve inventory items using search and filters.
+// Inventory endpoint with extended filtering.
+// For super-admin, admin, and staff, we use a LEFT JOIN with the users table to allow filtering by company.
 app.get('/api/inventory', async (req, res) => {
   try {
     const user = req.session.user;
-    let query = 'SELECT * FROM inventory WHERE 1=1';
+    let baseQuery = '';
     const params = [];
 
-    // Apply search term if provided.
-    if (req.query.search) {
-      query += " AND (cs LIKE ? OR serial LIKE ? OR phone LIKE ?)";
-      const term = `%${req.query.search}%`;
-      params.push(term, term, term);
-    }
-
-    // Apply additional filters.
-    ['status', 'location', 'type', 'po'].forEach(filter => {
-      if (req.query[filter]) {
-        query += ` AND ${filter} = ?`;
-        params.push(req.query[filter]);
+    if (user && ['super-admin', 'admin', 'staff'].includes(user.role)) {
+      baseQuery = `
+        SELECT i.* FROM inventory i 
+        LEFT JOIN users u 
+          ON CONCAT(u.first_name, " ", u.last_name) = i.location
+        WHERE 1=1
+      `;
+      if (req.query.search) {
+        baseQuery += " AND (i.cs LIKE ? OR i.serial LIKE ? OR i.phone LIKE ?)";
+        const term = `%${req.query.search}%`;
+        params.push(term, term, term);
       }
-    });
-
-    // For users who are not one of the allowed roles, restrict results based on location.
-    if (user && !['super-admin', 'admin', 'staff', 'company-admin', 'user'].includes(user.role)) {
-      query += ' AND location = ?';
-      params.push(user.location);
+      ['status', 'location', 'type', 'po'].forEach(filter => {
+        if (req.query[filter]) {
+          baseQuery += ` AND i.${filter} = ?`;
+          params.push(req.query[filter]);
+        }
+      });
+      if (req.query.company) {
+        baseQuery += ' AND u.company = ?';
+        params.push(req.query.company);
+      }
+    } else if (user && user.role === 'company-admin') {
+      // For company-admin, show items where location is one of the full names of users in the same company.
+      const [companyUsers] = await pool.query(
+        'SELECT CONCAT(first_name, " ", last_name) AS name FROM users WHERE company = ?',
+        [user.company]
+      );
+      const companyUserNames = companyUsers.map(u => u.name);
+      baseQuery = 'SELECT * FROM inventory WHERE 1=1';
+      if (req.query.search) {
+        baseQuery += " AND (cs LIKE ? OR serial LIKE ? OR phone LIKE ?)";
+        const term = `%${req.query.search}%`;
+        params.push(term, term, term);
+      }
+      ['status', 'location', 'type', 'po'].forEach(filter => {
+        if (req.query[filter]) {
+          baseQuery += ` AND ${filter} = ?`;
+          params.push(req.query[filter]);
+        }
+      });
+      if (companyUserNames.length > 0) {
+        baseQuery += ' AND location IN (?)';
+        params.push(companyUserNames);
+      } else {
+        return res.json({ success: true, items: [] });
+      }
+    } else if (user) {
+      // For regular users: show only items where location exactly matches their full name.
+      baseQuery = 'SELECT * FROM inventory WHERE 1=1';
+      if (req.query.search) {
+        baseQuery += " AND (cs LIKE ? OR serial LIKE ? OR phone LIKE ?)";
+        const term = `%${req.query.search}%`;
+        params.push(term, term, term);
+      }
+      ['status', 'location', 'type', 'po'].forEach(filter => {
+        if (req.query[filter]) {
+          baseQuery += ` AND ${filter} = ?`;
+          params.push(req.query[filter]);
+        }
+      });
+      baseQuery += ' AND location = ?';
+      params.push(user.name);
+    } else {
+      return res.status(403).json({ success: false, message: 'Unauthorized' });
     }
 
-    const [items] = await pool.query(query, params);
+    const [items] = await pool.query(baseQuery, params);
     res.json({ success: true, items });
   } catch (error) {
+    console.error('Error in /api/inventory:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// Search inventory by barcode (cs or serial)
+// Search inventory by barcode.
 app.get('/api/inventory/search', async (req, res) => {
   const { barcode } = req.query;
   try {
     const [rows] = await pool.query(
-      'SELECT * FROM inventory WHERE cs = ? OR serial = ?', 
+      'SELECT * FROM inventory WHERE cs = ? OR serial = ?',
       [barcode, barcode]
     );
     if (rows.length > 0)
@@ -174,18 +226,16 @@ app.get('/api/inventory/search', async (req, res) => {
   }
 });
 
+// Transit Batch endpoint.
 app.post('/api/inventory/transitBatch', async (req, res) => {
   const user = req.session.user;
   const { csList } = req.body;
-
   if (!user) {
     return res.status(403).json({ success: false, message: 'Unauthorized: Please log in' });
   }
-
   if (!csList || !Array.isArray(csList) || csList.length === 0) {
     return res.status(400).json({ success: false, message: 'Invalid request data' });
   }
-
   try {
     const placeholders = csList.map(() => '?').join(',');
     const [result] = await pool.query(
@@ -194,7 +244,6 @@ app.post('/api/inventory/transitBatch', async (req, res) => {
        WHERE cs IN (${placeholders})`,
       csList
     );
-
     if (result.affectedRows > 0) {
       res.json({ success: true, message: 'Items updated successfully' });
     } else {
@@ -206,6 +255,7 @@ app.post('/api/inventory/transitBatch', async (req, res) => {
   }
 });
 
+// Update inventory item endpoint.
 app.put('/api/inventory/:id', async (req, res) => {
   const user = req.session.user;
   if (!user) {
@@ -213,17 +263,12 @@ app.put('/api/inventory/:id', async (req, res) => {
   }
   const itemId = req.params.id;
   let payload = req.body;
-
-  // If the user is staff, only allow updating the status.
   if (user.role === 'staff') {
     payload = { status: payload.status };
   }
-
-  // Build a dynamic query using the payload keys.
   const fields = Object.keys(payload).map(key => `${key} = ?`).join(', ');
   const values = Object.values(payload);
   values.push(itemId);
-
   try {
     const [result] = await pool.query(`UPDATE inventory SET ${fields} WHERE id = ?`, values);
     if (result.affectedRows > 0)
@@ -240,23 +285,31 @@ app.put('/api/inventory/:id', async (req, res) => {
 app.get('/api/inventory/:id/comments', async (req, res) => {
   const itemId = req.params.id;
   const user = req.session.user;
-
   if (!user)
     return res.status(403).json({ success: false, message: 'Unauthorized' });
-
   try {
-    let query = 'SELECT * FROM comments WHERE item_id = ? AND ';
-    let params = [itemId];
-
-    if (user.role === 'admin') {
-      query += '(visibility = "admin" OR visibility = "user+admin")';
+    if (user.role === 'company-admin') {
+      // For company-admin, verify that the item’s location (i.e. assigned user full name)
+      // is in the list of users from the same company.
+      const [items] = await pool.query('SELECT location FROM inventory WHERE id = ?', [itemId]);
+      if (items.length === 0) {
+        return res.status(404).json({ success: false, message: 'Item not found' });
+      }
+      const item = items[0];
+      const [companyUsers] = await pool.query('SELECT CONCAT(first_name, " ", last_name) AS name FROM users WHERE company = ?', [user.company]);
+      const companyUserNames = companyUsers.map(u => u.name);
+      if (!companyUserNames.includes(item.location)) {
+        return res.status(403).json({ success: false, message: 'Forbidden' });
+      }
+      const [comments] = await pool.query('SELECT * FROM comments WHERE item_id = ?', [itemId]);
+      return res.json({ success: true, comments });
+    } else if (['super-admin', 'admin', 'staff'].includes(user.role)) {
+      const [comments] = await pool.query('SELECT * FROM comments WHERE item_id = ?', [itemId]);
+      return res.json({ success: true, comments });
     } else {
-      query += '(visibility = "user+admin" AND user_id = ?)';
-      params.push(user.id);
+      const [comments] = await pool.query('SELECT * FROM comments WHERE item_id = ? AND user_id = ?', [itemId, user.id]);
+      return res.json({ success: true, comments });
     }
-
-    const [comments] = await pool.query(query, params);
-    res.json({ success: true, comments });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -266,12 +319,9 @@ app.post('/api/inventory/:id/comments', async (req, res) => {
   const itemId = req.params.id;
   const { comment } = req.body;
   const user = req.session.user;
-
   if (!user)
     return res.status(403).json({ success: false, message: 'Unauthorized' });
-
   const visibility = (user.role === 'admin') ? 'admin' : 'user+admin';
-
   try {
     await pool.query(
       'INSERT INTO comments (item_id, text, user, user_id, visibility) VALUES (?, ?, ?, ?, ?)',
@@ -288,16 +338,12 @@ app.post('/api/inventory/:id/comments', async (req, res) => {
 app.post('/api/inventory/receive', async (req, res) => {
   const user = req.session.user;
   const { csList } = req.body;
-
-  // Only admin and super-admin can use this endpoint.
   if (!user || !['admin', 'super-admin'].includes(user.role)) {
     return res.status(403).json({ success: false, message: 'Unauthorized: Admin privileges required.' });
   }
-
   if (!csList || !Array.isArray(csList) || csList.length === 0) {
     return res.status(400).json({ success: false, message: 'Invalid request data' });
   }
-
   try {
     const updates = csList.map(cs =>
       pool.query(
@@ -305,7 +351,6 @@ app.post('/api/inventory/receive', async (req, res) => {
         ['Warehouse', 'Storeroom', cs]
       )
     );
-
     await Promise.all(updates);
     res.json({ success: true, message: 'Items moved to Warehouse with Storeroom status.' });
   } catch (err) {
@@ -314,7 +359,8 @@ app.post('/api/inventory/receive', async (req, res) => {
   }
 });
 
-// Update the isAdmin middleware to include super-admin as well.
+// ---------------- Admin & User Management Endpoints ----------------
+
 function isAdmin(req, res, next) {
   if (req.session.user && (req.session.user.role === 'admin' || req.session.user.role === 'super-admin')) {
     next();
@@ -322,88 +368,6 @@ function isAdmin(req, res, next) {
     res.status(403).json({ success: false, message: 'Forbidden. Admin privileges required.' });
   }
 }
-
-app.post('/api/inventory/upload', isAdmin, upload.single('file'), async (req, res) => {
-  if (!req.file)
-    return res.status(400).json({ success: false, message: 'No file uploaded' });
-
-  const filePath = path.resolve(req.file.path);
-  const items = [];
-  const errors = [];
-  const existingCs = new Set();
-
-  try {
-    const [existingRows] = await pool.query('SELECT cs FROM inventory');
-    existingRows.forEach(row => existingCs.add(row.cs));
-
-    fs.createReadStream(filePath)
-      .pipe(csv.parse({ headers: true }))
-      .on('error', error => {
-        console.error('CSV Error:', error);
-        res.status(500).json({ success: false, message: 'Failed to parse CSV' });
-      })
-      .on('data', row => {
-        const { cs, serial, phone, type, status, location, po } = row;
-        if (!cs || !serial || !phone || !type || !status || !location || !po) {
-          errors.push(`Skipping row with missing fields: ${JSON.stringify(row)}`);
-          return;
-        }
-        if (existingCs.has(cs)) {
-          errors.push(`Duplicate CS skipped: ${cs}`);
-          return;
-        }
-        items.push([cs, serial, phone, type, status, location, po]);
-        existingCs.add(cs);
-      })
-      .on('end', async () => {
-        try {
-          if (items.length > 0) {
-            await pool.query(
-              `INSERT INTO inventory (cs, serial, phone, type, status, location, po)
-               VALUES ?`,
-              [items]
-            );
-          }
-          fs.unlinkSync(filePath);
-          res.json({
-            success: true,
-            message: `${items.length} items added. ${errors.length ? errors.length + ' rows skipped.' : ''}`,
-            skipped: errors,
-          });
-        } catch (err) {
-          console.error('Insert Error:', err);
-          res.status(500).json({ success: false, message: 'Database insert failed' });
-        }
-      });
-  } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({ success: false, message: 'Upload failed' });
-  }
-});
-
-// ---------------- Dispatch Endpoint ----------------
-
-app.post('/api/dispatch', async (req, res) => {
-  const { techId, items } = req.body;
-  try {
-    const [techRows] = await pool.query('SELECT first_name, last_name FROM users WHERE id = ?', [techId]);
-    if (techRows.length === 0)
-      return res.status(404).json({ success: false, message: 'Tech not found' });
-    const techName = `${techRows[0].first_name} ${techRows[0].last_name}`;
-
-    for (const item of items) {
-      await pool.query(
-        'UPDATE inventory SET location = ?, status = ? WHERE cs = ?',
-        [techName, 'Dispatched', item.cs]
-      );
-    }
-    res.json({ success: true, message: 'Dispatch processed; items updated as Dispatched.' });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// ---------------- Admin & User Management Endpoints ----------------
 
 app.get('/api/users', isAdmin, async (req, res) => {
   try {
@@ -472,6 +436,19 @@ app.delete('/api/users/:id', isAdmin, async (req, res) => {
 app.get('/api/users/list', async (req, res) => {
   try {
     const [users] = await pool.query('SELECT id, first_name, last_name, address, contact_number as contact, email, company FROM users');
+    res.json({ success: true, users });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.get('/api/users/company', async (req, res) => {
+  const user = req.session.user;
+  if (!user || user.role !== 'company-admin') {
+    return res.status(403).json({ success: false, message: 'Forbidden' });
+  }
+  try {
+    const [users] = await pool.query('SELECT id, first_name, last_name, email FROM users WHERE company = ?', [user.company]);
     res.json({ success: true, users });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

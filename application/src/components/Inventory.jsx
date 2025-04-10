@@ -2,35 +2,45 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Comments from './Comments';
 
-function Inventory({ userRole, userLocation }) {
+function Inventory({ userRole, userName, userLocation }) {
+  // Here, userName is assumed to be the full name of the logged-in user.
+  // (Adjust as needed; in our login we store it as user.name)
+  
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Filters includes an extra "company" filter
   const [filters, setFilters] = useState({
     status: '',
     location: '',
     type: '',
-    po: ''
+    po: '',
+    company: '' // used by super-admin/admin/staff
   });
+  
+  // Filter options as returned from the server
   const [filterOptions, setFilterOptions] = useState({
     status: [],
     location: [],
     type: [],
-    po: []
+    po: [],
+    company: []
   });
+  
+  // Local state for location options (different per user role)
+  const [locationOptions, setLocationOptions] = useState([]);
+  
   const [items, setItems] = useState([]);
   const [expandedCard, setExpandedCard] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editItem, setEditItem] = useState({});
 
-  // State for modal control (Export functionality remains unchanged)
+  // Modal state for CSV export.
   const [showExportModal, setShowExportModal] = useState(false);
 
-  // Allowed roles array remains the same.
+  // Allowed roles for editing restricted fields.
   const allowedRoles = ['super-admin', 'admin', 'staff'];
-
-  // This flag helps determine if the user can edit all fields.
   const canEditAll = userRole === 'super-admin' || userRole === 'admin';
 
-  // Available fields – note that updated_date and received_date are considered restricted.
   const availableFields = [
     { key: 'cs', label: 'CS' },
     { key: 'serial', label: 'Serial Number' },
@@ -43,19 +53,49 @@ function Inventory({ userRole, userLocation }) {
     { key: 'received_date', label: 'Received Date', restricted: true }
   ];
 
-  // Initialize all fields as selected by default (export functionality).
   const [selectedFields, setSelectedFields] = useState(
     availableFields.reduce((acc, field) => ({ ...acc, [field.key]: true }), {})
   );
 
+  // Fetch filter options from the server.
   useEffect(() => {
     axios.get('/api/inventory/filters')
       .then(res => setFilterOptions(res.data))
       .catch(err => console.error(err));
   }, []);
 
+  // Set locationOptions based on user role.
   useEffect(() => {
-    const params = { search: searchTerm, ...filters };
+    // For super-admin, admin and staff: show all non-blank locations from filterOptions.
+    if (allowedRoles.includes(userRole)) {
+      const allLocations = filterOptions.location.filter(loc => loc && loc.trim() !== '');
+      // Add an "All" option
+      setLocationOptions(["All", ...allLocations]);
+    } else if (userRole === 'company-admin') {
+      // For company-admin, fetch company users.
+      axios.get('/api/users/company')
+        .then(res => {
+          // Expecting res.data.users to be an array of objects with first_name and last_name.
+          const companyNames = res.data.users.map(
+            u => `${u.first_name} ${u.last_name}`
+          );
+          // You might optionally add an "All" option for company-admin as well.
+          setLocationOptions(["All", ...companyNames]);
+        })
+        .catch(err => console.error(err));
+    } else {
+      // For regular users, only show their own name.
+      setLocationOptions([userName]);
+    }
+  }, [filterOptions, userRole, userName]);
+
+  // When fetching inventory, remove the location filter if "All" is selected.
+  useEffect(() => {
+    const activeFilters = { ...filters };
+    if (activeFilters.location === "All" || !activeFilters.location) {
+      delete activeFilters.location;
+    }
+    const params = { search: searchTerm, ...activeFilters };
     axios.get('/api/inventory', { params })
       .then(res => setItems(res.data.items || []))
       .catch(err => console.error(err));
@@ -65,7 +105,6 @@ function Inventory({ userRole, userLocation }) {
     setExpandedCard(expandedCard === itemId ? null : itemId);
   };
 
-  // Handler for export fields checkbox.
   const handleFieldChange = (key) => {
     setSelectedFields({
       ...selectedFields,
@@ -73,7 +112,6 @@ function Inventory({ userRole, userLocation }) {
     });
   };
 
-  // Export CSV (unchanged).
   const exportToCSV = () => {
     const headers = availableFields
       .filter(field =>
@@ -98,7 +136,6 @@ function Inventory({ userRole, userLocation }) {
     const csvContent = headers.join(',') + '\n' + rows.map(row => row.join(',')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-
     const link = document.createElement("a");
     link.href = url;
     link.download = "inventory_export.csv";
@@ -108,19 +145,16 @@ function Inventory({ userRole, userLocation }) {
     setShowExportModal(false);
   };
 
-  // Start editing an item. For admin roles, copy the whole item; for staff, only copy the status.
   const handleEditClick = (item) => {
     setEditingId(item.id);
     setEditItem(canEditAll ? { ...item } : { status: item.status });
   };
 
-  // Cancel editing.
   const handleCancelEdit = () => {
     setEditingId(null);
     setEditItem({});
   };
 
-  // Change handler for editing fields.
   const handleChange = (field, value) => {
     setEditItem({
       ...editItem,
@@ -128,14 +162,10 @@ function Inventory({ userRole, userLocation }) {
     });
   };
 
-  // Save the changes by calling an API endpoint.
   const handleSave = (id) => {
-    // You could build the payload based on the role:
     const payload = canEditAll ? editItem : { status: editItem.status };
-
     axios.put(`/api/inventory/${id}`, payload)
       .then(res => {
-        // Update local state for faster UI update.
         const newItems = items.map(item => (item.id === id ? { ...item, ...payload } : item));
         setItems(newItems);
         setEditingId(null);
@@ -161,7 +191,7 @@ function Inventory({ userRole, userLocation }) {
 
       {/* Filters */}
       <div className="row mb-4">
-        {['status', 'location', 'type', 'po'].map(key => (
+        {['status', 'type', 'po'].map(key => (
           <div className="col-md-3" key={key}>
             <select
               className="form-select"
@@ -175,6 +205,36 @@ function Inventory({ userRole, userLocation }) {
             </select>
           </div>
         ))}
+
+        {/* Location Filter depends on role */}
+        <div className="col-md-3">
+          <select
+            className="form-select"
+            value={filters.location}
+            onChange={e => setFilters({ ...filters, location: e.target.value })}
+          >
+            <option value="">LOCATION</option>
+            {locationOptions.map((loc, idx) => (
+              <option key={idx} value={loc}>{loc}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* For super-admin, admin, and staff, also include Company filter */}
+        {allowedRoles.includes(userRole) && (
+          <div className="col-md-3">
+            <select
+              className="form-select"
+              value={filters.company}
+              onChange={e => setFilters({ ...filters, company: e.target.value })}
+            >
+              <option value="">COMPANY</option>
+              {filterOptions.company.map((comp, idx) => (
+                <option key={idx} value={comp}>{comp}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Export Button */}
@@ -234,9 +294,7 @@ function Inventory({ userRole, userLocation }) {
           <div key={item.id} className="card mb-4">
             <div className="card-body">
               <h5 className="card-title">CS: {item.cs}</h5>
-
               <div className="row">
-                {/* For each field, if this item is being edited, render an input if allowed */}
                 <div className="col-md-6 mb-2">
                   <strong>Status:</strong> {editingId === item.id ? (
                     <input
@@ -249,7 +307,6 @@ function Inventory({ userRole, userLocation }) {
                     item.status
                   )}
                 </div>
-
                 <div className="col-md-6 mb-2">
                   <strong>Serial Number:</strong>{' '}
                   {editingId === item.id && canEditAll ? (
@@ -263,7 +320,6 @@ function Inventory({ userRole, userLocation }) {
                     item.serial
                   )}
                 </div>
-
                 <div className="col-md-6 mb-2">
                   <strong>Phone:</strong>{' '}
                   {editingId === item.id && canEditAll ? (
@@ -277,7 +333,6 @@ function Inventory({ userRole, userLocation }) {
                     item.phone
                   )}
                 </div>
-
                 <div className="col-md-6 mb-2">
                   <strong>Type:</strong>{' '}
                   {editingId === item.id && canEditAll ? (
@@ -291,7 +346,6 @@ function Inventory({ userRole, userLocation }) {
                     item.type
                   )}
                 </div>
-
                 <div className="col-md-6 mb-2">
                   <strong>PO Number:</strong>{' '}
                   {editingId === item.id && canEditAll ? (
@@ -305,7 +359,6 @@ function Inventory({ userRole, userLocation }) {
                     item.po
                   )}
                 </div>
-
                 <div className="col-md-6 mb-2">
                   <strong>Location:</strong>{' '}
                   {editingId === item.id && canEditAll ? (
@@ -319,8 +372,6 @@ function Inventory({ userRole, userLocation }) {
                     item.location
                   )}
                 </div>
-
-                {/* The restricted fields */}
                 {allowedRoles.includes(userRole) && (
                   <>
                     <div className="col-md-6 mb-2">
@@ -352,8 +403,6 @@ function Inventory({ userRole, userLocation }) {
                   </>
                 )}
               </div>
-
-              {/* Edit controls */}
               {editingId === item.id ? (
                 <div className="mt-3">
                   <button className="btn btn-primary me-2" onClick={() => handleSave(item.id)}>Save</button>
@@ -364,14 +413,12 @@ function Inventory({ userRole, userLocation }) {
                   Edit
                 </button>
               )}
-
               <button
                 className="btn btn-secondary btn-sm mt-3 ms-2"
                 onClick={() => toggleComments(item.id)}
               >
                 {expandedCard === item.id ? 'Hide Comments ▲' : 'Show Comments ▼'}
               </button>
-
               {expandedCard === item.id && (
                 <div className="mt-3">
                   <Comments itemId={item.id} userRole={userRole} />

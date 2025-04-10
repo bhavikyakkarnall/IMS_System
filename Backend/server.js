@@ -359,6 +359,37 @@ app.post('/api/inventory/receive', async (req, res) => {
   }
 });
 
+// ---------------- Dispatch Endpoint ----------------
+app.post('/api/dispatch', async (req, res) => {
+  const { techId, items } = req.body;
+
+  try {
+    // Retrieve the technician's name based on techId.
+    const [techRows] = await pool.query('SELECT first_name, last_name FROM users WHERE id = ?', [techId]);
+    if (techRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Tech not found' });
+    }
+    const techName = `${techRows[0].first_name} ${techRows[0].last_name}`;
+
+    // Process each item.
+    for (const item of items) {
+      // Update the inventory record only if a CS# is provided.
+      if (item.cs) {
+        await pool.query(
+          'UPDATE inventory SET location = ?, status = ? WHERE cs = ?',
+          [techName, 'Dispatched', item.cs]
+        );
+        console.log(`Updated inventory for CS ${item.cs} with location ${techName}`);
+      }
+    }
+    res.json({ success: true, message: 'Dispatch processed; items updated as Dispatched.' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+
+
 // ---------------- Admin & User Management Endpoints ----------------
 
 function isAdmin(req, res, next) {

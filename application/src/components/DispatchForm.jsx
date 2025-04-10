@@ -12,8 +12,16 @@ function DispatchForm() {
     date: new Date().toISOString().substr(0, 10),
     comment: ''
   });
-  // Initialize with 5 empty rows for items.
-  const initialRows = Array.from({ length: 5 }, () => ({ cs: '', serial: '', qty: '', phone: '' }));
+
+  // Each row includes cs, serial, type, qty, phone and the "isManual" flag.
+  const initialRows = Array.from({ length: 5 }, () => ({
+    cs: '',
+    serial: '',
+    type: '',
+    qty: '',
+    phone: '',
+    isManual: false
+  }));
   const [itemRows, setItemRows] = useState(initialRows);
 
   useEffect(() => {
@@ -29,49 +37,63 @@ function DispatchForm() {
   };
 
   const handleRowChange = (index, field, value) => {
-    // Update the itemRows state using a functional update.
     setItemRows(prevRows => {
       const newRows = [...prevRows];
-      newRows[index][field] = value;
       
-      // Check if the changed field is "cs" or "serial" in the last row and non-empty.
-      if ((field === 'cs' || field === 'serial') && index === newRows.length - 1 && value.trim() !== '') {
-        newRows.push({ cs: '', serial: '', qty: '', phone: '' });
+      if (field === 'type') {
+        // Mark the row as manually edited if user changes type.
+        newRows[index][field] = value;
+        newRows[index].isManual = true;
+      } else {
+        newRows[index][field] = value;
       }
-      
+
+      // For CS# changes, trigger auto-population only if:
+      //  - Value is non-empty,
+      //  - Value length is at least 6 characters,
+      //  - And the row is not flagged as manual.
+      if (field === 'cs' && value.trim() !== '' && value.length >= 7 && !newRows[index].isManual) {
+        axios.get('/api/inventory/search', { params: { barcode: value } })
+          .then(res => {
+            if (res.data.success && res.data.item) {
+              // Only update the row if the type was not manually set.
+              setItemRows(prevRows2 => {
+                const updatedRows = [...prevRows2];
+                if (!updatedRows[index].isManual) {
+                  const itemData = res.data.item;
+                  updatedRows[index] = {
+                    ...updatedRows[index],
+                    cs: itemData.cs,
+                    serial: itemData.serial,
+                    phone: itemData.phone,
+                    qty: itemData.qty || updatedRows[index].qty,
+                    type: itemData.type
+                  };
+                }
+                return updatedRows;
+              });
+            } else {
+              alert('Item not found. Please re-enter the CS# or enter Type manually.');
+              setItemRows(prevRows2 => {
+                const updatedRows = [...prevRows2];
+                updatedRows[index].cs = '';
+                return updatedRows;
+              });
+            }
+          })
+          .catch(err => console.error(err));
+      }
+
+      // If user enters into CS or Type in the last row, add a new empty row.
+      if ((field === 'cs' || field === 'type') && index === newRows.length - 1 && value.trim() !== '') {
+        newRows.push({ cs: '', serial: '', type: '', qty: '', phone: '', isManual: false });
+      }
       return newRows;
     });
-
-    // For cs or serial, attempt auto-population from the inventory.
-    if (field === 'cs' || field === 'serial') {
-      axios.get('/api/inventory/search', { params: { barcode: value } })
-        .then(res => {
-          if (res.data.success && res.data.item) {
-            setItemRows(prevRows => {
-              const updatedRows = [...prevRows];
-              updatedRows[index] = {
-                cs: res.data.item.cs,
-                serial: res.data.item.serial,
-                qty: updatedRows[index].qty,
-                phone: res.data.item.phone
-              };
-              return updatedRows;
-            });
-          } else {
-            alert('Item not found. Please re-enter.');
-            setItemRows(prevRows => {
-              const updatedRows = [...prevRows];
-              updatedRows[index][field] = '';
-              return updatedRows;
-            });
-          }
-        })
-        .catch(err => console.error(err));
-    }
   };
 
   const addRow = () => {
-    setItemRows([...itemRows, { cs: '', serial: '', qty: '', phone: '' }]);
+    setItemRows([...itemRows, { cs: '', serial: '', type: '', qty: '', phone: '', isManual: false }]);
   };
 
   const clearForm = () => {
@@ -86,18 +108,26 @@ function DispatchForm() {
   };
 
   const handleDispatchSubmit = async () => {
+    // Build two arrays: one for database updates and one for PDF generation.
+    // For the database, we send only rows that are auto-populated (not manual).
+    const itemsForDb = itemRows.filter(row => (row.cs || row.type) && !row.isManual);
+    
+    // For the PDF, include all rows that have either CS or type.
+    const itemsForPdf = itemRows.filter(row => row.cs || row.type);
+
     const dispatchData = {
-      techId: selectedTech.id, // send tech id to back end
+      techId: selectedTech.id,
       form_number: formData.form_number,
       tracking_number: formData.tracking_number,
       date: formData.date,
       comment: formData.comment,
-      items: itemRows.filter(row => row.cs || row.serial)
+      items: itemsForDb
     };
 
     try {
       const res = await axios.post('/api/dispatch', dispatchData);
       if (res.data.success) {
+        // Generate PDF using all rows (manual and auto)
         const doc = new jsPDF();
         let margin = 15;
         let verticalOffset = margin;
@@ -123,11 +153,12 @@ function DispatchForm() {
         doc.text(`Date: ${formData.date}`, margin, verticalOffset);
         verticalOffset += 10;
 
-        const tableColumn = ["CS#", "Serial", "Qty", "Phone"];
-        const tableRows = dispatchData.items.map(item => [
-          item.cs, item.serial, item.qty, item.phone
+        // Table columns order: Qty, Type, CS, Serial, Phone.
+        const tableColumn = ["Qty", "Type", "CS#", "Serial", "Phone"];
+        const tableRows = itemsForPdf.map(item => [
+          item.qty, item.type, item.cs, item.serial, item.phone
         ]);
-        
+
         autoTable(doc, {
           head: [tableColumn],
           body: tableRows,
@@ -140,7 +171,12 @@ function DispatchForm() {
         doc.text("Comment:", margin, verticalOffset);
         verticalOffset += 7;
         doc.text(formData.comment || '', margin, verticalOffset, { maxWidth: 180 });
+
+        // Save the PDF.
         doc.save(`${formData.form_number || 'dispatch_form'}.pdf`);
+
+        // Clear the form.
+        clearForm();
       } else {
         alert("Dispatch failed: " + res.data.message);
       }
@@ -213,9 +249,10 @@ function DispatchForm() {
       <table className="table table-bordered">
         <thead>
           <tr>
+            <th>Qty</th>
+            <th>Type</th>
             <th>CS#</th>
             <th>Serial</th>
-            <th>Qty</th>
             <th>Phone</th>
           </tr>
         </thead>
@@ -224,32 +261,40 @@ function DispatchForm() {
             <tr key={index}>
               <td>
                 <input 
-                  type="text" 
-                  className="form-control" 
-                  value={row.cs}
-                  onChange={e => handleRowChange(index, 'cs', e.target.value)}
-                />
-              </td>
-              <td>
-                <input 
-                  type="text" 
-                  className="form-control" 
-                  value={row.serial}
-                  onChange={e => handleRowChange(index, 'serial', e.target.value)}
-                />
-              </td>
-              <td>
-                <input 
-                  type="number" 
-                  className="form-control" 
+                  type="number"
+                  className="form-control"
                   value={row.qty}
                   onChange={e => handleRowChange(index, 'qty', e.target.value)}
                 />
               </td>
               <td>
                 <input 
-                  type="text" 
-                  className="form-control" 
+                  type="text"
+                  className="form-control"
+                  value={row.type}
+                  onChange={e => handleRowChange(index, 'type', e.target.value)}
+                />
+              </td>
+              <td>
+                <input 
+                  type="text"
+                  className="form-control"
+                  value={row.cs}
+                  onChange={e => handleRowChange(index, 'cs', e.target.value)}
+                />
+              </td>
+              <td>
+                <input 
+                  type="text"
+                  className="form-control"
+                  value={row.serial}
+                  onChange={e => handleRowChange(index, 'serial', e.target.value)}
+                />
+              </td>
+              <td>
+                <input 
+                  type="text"
+                  className="form-control"
                   value={row.phone}
                   onChange={e => handleRowChange(index, 'phone', e.target.value)}
                 />
@@ -263,7 +308,7 @@ function DispatchForm() {
       <div className="mb-3">
         <label>Comment:</label>
         <textarea 
-          className="form-control" 
+          className="form-control"
           value={formData.comment}
           onChange={e => setFormData({ ...formData, comment: e.target.value })}
         ></textarea>

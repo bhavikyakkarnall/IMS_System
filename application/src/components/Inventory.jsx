@@ -297,12 +297,17 @@ function Inventory({ userRole, userName, userLocation }) {
               <div className="row">
                 <div className="col-md-6 mb-2">
                   <strong>Status:</strong> {editingId === item.id ? (
-                    <input
-                      type="text"
-                      className="form-control"
+                    <select
+                      className="form-select"
                       value={editItem.status}
                       onChange={e => handleChange('status', e.target.value)}
-                    />
+                    >
+                      <option value="Storeroom">Storeroom</option>
+                      <option value="Dispatched">Dispatched</option>
+                      <option value="Installed">Installed</option>
+                      <option value="Transit to Office">Transit to Office</option>
+                      <option value="Refurb">Refurb</option>
+                    </select>
                   ) : (
                     item.status
                   )}

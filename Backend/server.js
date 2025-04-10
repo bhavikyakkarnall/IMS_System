@@ -348,7 +348,7 @@ app.post('/api/inventory/receive', async (req, res) => {
     const updates = csList.map(cs =>
       pool.query(
         'UPDATE inventory SET location = ?, status = ? WHERE cs = ?',
-        ['Warehouse', 'Storeroom', cs]
+        ['ADT Security', 'Refurb', cs]
       )
     );
     await Promise.all(updates);

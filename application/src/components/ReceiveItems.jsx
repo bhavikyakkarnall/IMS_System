@@ -14,7 +14,8 @@ function ReceiveItems() {
   useEffect(() => {
     axios.get('/api/home')
       .then(res => {
-        if (res.data.user?.role !== 'admin') {
+        const userRole = res.data.user?.role;
+        if (userRole !== 'admin' && userRole !== 'super-admin') {
           navigate('/');
         }
       })

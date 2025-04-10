@@ -50,7 +50,7 @@ function DispatchForm() {
 
       // For CS# changes, trigger auto-population only if:
       //  - Value is non-empty,
-      //  - Value length is at least 6 characters,
+      //  - Value length is at least 7 characters,
       //  - And the row is not flagged as manual.
       if (field === 'cs' && value.trim() !== '' && value.length >= 7 && !newRows[index].isManual) {
         axios.get('/api/inventory/search', { params: { barcode: value } })
